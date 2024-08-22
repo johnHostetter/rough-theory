@@ -1,4 +1,4 @@
-# rough-theory: A Python library for rough set theory :snake:
+# rough-theory: Python igraph for rough set theory :snake:
 <a href="https://github.com/johnHostetter/rough-theory/actions"><img alt="Actions Status" src="https://github.com/johnHostetter/rough-theory/workflows/Test/badge.svg"></a>
 <a href="https://github.com/johnHostetter/rough-theory/actions"><img alt="Actions Status" src="https://github.com/johnHostetter/rough-theory/workflows/Pylint/badge.svg"></a>
 <a href="https://codecov.io/github/johnHostetter/rough-theory" > 
