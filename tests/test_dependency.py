@@ -77,7 +77,8 @@ class TestDependenciesInRoughOperations(unittest.TestCase):
         )
         assert knowledge_base.lower_approximation("P", set_x_4) == set_y_4
         assert knowledge_base.lower_approximation("P", set_x_5) == frozenset()
-        # only these elements can be classified into blocks of the partition using knowledge P
+        # only these elements can be classified into blocks of the partition
+        # using knowledge P
         assert knowledge_base.find_relative_positive_region("P", "Q") == set_y_3.union(
             set_y_4, set_y_5, set_y_6
         )

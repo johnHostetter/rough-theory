@@ -54,7 +54,8 @@ class TestRoughSets(unittest.TestCase):
         set_x_2 = frozenset({"x2", "x8"})
 
         # test that the lower approximation of a set is the union of the lower approximations
-        # of its elements; test the positive region as well (they should be the same)
+        # of its elements; test the positive region as well (they should be the
+        # same)
         assert (
             self.knowledge_base.lower_approximation("R", set_x_1)
             == self.knowledge_base.positive_region("R", set_x_1)

@@ -3,8 +3,8 @@ Implements the methods required to work with rough theory.
 """
 
 from collections.abc import Iterable
-from typing import Union, Tuple, List
 from itertools import chain, combinations
+from typing import List, Tuple, Union
 
 from rough.approximation import RoughApproximation
 
@@ -245,7 +245,8 @@ class RoughOperations(RoughApproximation):
                     frozenset(possible_reduct)
                     for possible_reduct in possible_reducts
                     if self.independent(frozenset(possible_reduct), mode=mode)
-                    # and self.depends_on(relations, frozenset(possible_reduct))
+                    # and self.depends_on(relations,
+                    # frozenset(possible_reduct))
                     and mode(possible_reduct) == target_knowledge
                     and len(indispensables.intersection(possible_reduct)) > 0
                 ]
@@ -360,7 +361,8 @@ class RoughOperations(RoughApproximation):
 
         """
         return all(
-            # the elements of IND(P) must have at least 1 subset match in IND(Q)
+            # the elements of IND(P) must have at least 1 subset match in
+            # IND(Q)
             any(
                 # the element in IND(P) is a subset of any element in IND(Q)
                 P_element.issubset(Q_element)

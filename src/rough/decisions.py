@@ -96,14 +96,16 @@ class RoughDecisions(RoughOperations):
         )
 
     def __find_reduct_by_matrix(self, matrix):
-        relation_subsets = list(matrix.values())  # all subsets found in the matrix
+        # all subsets found in the matrix
+        relation_subsets = list(matrix.values())
         relation_subsets.sort(
             key=len
         )  # smaller sets start at 0, larger sets near end of list
 
         core = self.find_core_by_matrix(matrix)
 
-        # any matrix entry that has cardinality > 1 can possibly be used as a reduct
+        # any matrix entry that has cardinality > 1 can possibly be used as a
+        # reduct
         possible_reducts = [
             relations for relations in relation_subsets if len(relations) > 1
         ]
@@ -114,7 +116,8 @@ class RoughDecisions(RoughOperations):
         for key, values in matrix.items():
             new_value = values.intersection(core)
             if len(new_value) > 0:  # check if the CORE may be used here
-                matrix[key] = new_value  # replace the value with a CORE attribute
+                # replace the value with a CORE attribute
+                matrix[key] = new_value
             else:  # find the next smallest subset and
                 # update the matrix pair-wise comparison with it
                 for possible_reduct in possible_reducts:
@@ -210,7 +213,8 @@ class RoughDecisions(RoughOperations):
                 if not decision_category.issubset(attr_partitions["e"]):
                     # by only using the selected_condition_attributes,
                     # the decision_category has changed;
-                    # this means that whatever we got rid of was actually important
+                    # this means that whatever we got rid of was actually
+                    # important
                     if rule_idx not in core_attributes:
                         core_attributes[rule_idx] = set()
                     missing_category = (
@@ -259,7 +263,8 @@ class RoughDecisions(RoughOperations):
                     if decision_category.issubset(attr_partitions["e"]):
                         if rule_idx not in reduct_attributes:
                             reduct_attributes[rule_idx] = set()
-                        # elif rule_idx not in reduct_done or not reduct_done[rule_idx]:
+                        # elif rule_idx not in reduct_done or not
+                        # reduct_done[rule_idx]:
                         reduct_attributes[rule_idx].add(selected_condition_attributes)
 
                 if rule_idx in reduct_attributes:  # we only want the smallest reducts

@@ -4,14 +4,14 @@ calculations of cores, reducts, dispensability, etc.
 """
 
 import unittest
-from typing import Union, Type, Tuple, List
+from typing import List, Tuple, Type, Union
 
 from rough.decisions import RoughDecisions
 from rough.operations import RoughOperations
 
 
 def make_example(
-    class_to_test: Union[Type[RoughOperations], Type[RoughDecisions]]
+    class_to_test: Union[Type[RoughOperations], Type[RoughDecisions]],
 ) -> Tuple[List[int], Union[RoughOperations, RoughDecisions]]:
     """
     Make an example that is commonly used between different test scenarios.
@@ -94,7 +94,8 @@ class TestKnowledgeRepresentationSystem(unittest.TestCase):
         assert self.knowledge_base.upper_approximation(set_c, set_x) == frozenset(
             {1, 2, 3, 4, 5, 8}
         )
-        # unable to decide if 2 or 8 belong to the set set_x or not, using attributes set_c
+        # unable to decide if 2 or 8 belong to the set set_x or not, using
+        # attributes set_c
         assert self.knowledge_base.boundary_region(set_c, set_x) == frozenset({2, 8})
 
     def test_dispensability(self) -> None:

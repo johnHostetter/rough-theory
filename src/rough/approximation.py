@@ -8,10 +8,9 @@ book "Rough Sets: Theoretical Aspects of Reasoning About Data".
 
 from collections import namedtuple
 from collections.abc import Iterable
-from typing import List, Union, Set
+from typing import List, Set, Union
 
 import igraph
-
 from rough.granulation import RoughGranulation
 
 
@@ -54,11 +53,13 @@ class RoughApproximation(RoughGranulation):
             for element in frozenset(self.select_by_tags(tags="element")["item"]):
                 categories = self[element]
                 if len(categories) > 0:
-                    # it is possible for self[element] to have no equivalence relations
+                    # it is possible for self[element] to have no equivalence
+                    # relations
                     new_category = set(self.select_by_tags(tags="element")["item"])
                     for relation in equivalence_relations:
                         if relation in categories:
-                            # some elements might not be defined for all relations
+                            # some elements might not be defined for all
+                            # relations
                             new_category = new_category.intersection(
                                 categories[relation]
                             )
@@ -298,7 +299,8 @@ class RoughApproximation(RoughGranulation):
         ) > 0 and self.upper_approximation(relations, category) != frozenset(
             self.select_by_tags(tags="element")["item"]
         ):
-            # We are able to decide whether some elements of the universe belong to X or not X.
+            # We are able to decide whether some elements of the universe
+            # belong to X or not X.
             return namedtuple(
                 "RoughlyDefinable", ["lower_approximation", "upper_approximation"]
             )(lower_approximation, upper_approximation)

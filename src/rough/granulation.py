@@ -4,9 +4,9 @@ granulation operations required for rough set theory. This class is inherited by
 classes, such as RoughApproximation, to provide the basic granulation operations.
 """
 
-from typing import Union, Dict, Set, Any, List
-from collections.abc import Iterable
 from collections import Counter
+from collections.abc import Iterable
+from typing import Any, Dict, List, Set, Union
 
 import graphviz
 import igraph as ig
@@ -21,14 +21,16 @@ class RoughGranulation:
 
     def __init__(self):
         self.graph = ig.Graph(directed=True)
-        # keys: hashed frozenset or attribute name (if given) mapped to attribute values
+        # keys: hashed frozenset or attribute name (if given) mapped to
+        # attribute values
         self.attribute_table = {}
 
     def __getitem__(self, item: Union[str, int]) -> Dict[str, list]:
         vertex = self.graph.vs.find(item_eq=item)
         neighbor_vertices = self.graph.vs[self.graph.neighbors(vertex)]
 
-        # get any vertices from vertex's neighbors that actively apply a relation upon 'vertex'
+        # get any vertices from vertex's neighbors that actively apply a
+        # relation upon 'vertex'
         relations = [
             vertex["item"] for vertex in neighbor_vertices if vertex["item"] is not None
         ]
