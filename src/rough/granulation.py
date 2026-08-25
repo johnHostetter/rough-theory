@@ -24,9 +24,68 @@ class RoughGranulation:
         # keys: hashed frozenset or attribute name (if given) mapped to
         # attribute values
         self.attribute_table = {}
+        # maps a vertex's "item" attribute value to the indices of every vertex
+        # with that value - igraph has no index for arbitrary-Python-object
+        # vertex attributes, so `self.graph.vs.find(item_eq=x)`/`.select(item_eq=x)`
+        # are each an O(V) linear scan; this turns every such lookup into O(1)
+        # (amortized) by maintaining the mapping incrementally as vertices are
+        # added (see _register_item(), called from set_granules() and
+        # add_parent_relation() - the only two places vertices are ever added to
+        # self.graph). Kept as a private implementation detail: _find_by_item()/
+        # _select_by_item() below are the only intended way to read it.
+        self._item_index: Dict[Any, List[int]] = {}
+
+    def _register_item(self, item: Any, vertex_index: int) -> None:
+        """
+        Record that the vertex at `vertex_index` has "item" attribute `item`,
+        so later _find_by_item()/_select_by_item() calls can find it in O(1)
+        instead of scanning every vertex in the graph.
+
+        Args:
+            item: The vertex's "item" attribute value.
+            vertex_index: The vertex's index in self.graph.
+
+        Returns:
+            None
+        """
+        self._item_index.setdefault(item, []).append(vertex_index)
+
+    def _find_by_item(self, item: Any) -> ig.Vertex:
+        """
+        Equivalent to self.graph.vs.find(item_eq=item), but O(1) via
+        self._item_index instead of an O(V) linear scan. Returns the first
+        vertex registered with this item, matching igraph's own find()
+        semantics when multiple vertices share the same "item" value.
+
+        Args:
+            item: The "item" attribute value to search for.
+
+        Returns:
+            The first vertex with a matching "item" attribute.
+
+        Raises:
+            ValueError: If no vertex has this "item" attribute.
+        """
+        indices = self._item_index.get(item)
+        if not indices:
+            raise ValueError("no such vertex")
+        return self.graph.vs[indices[0]]
+
+    def _select_by_item(self, item: Any) -> ig.VertexSeq:
+        """
+        Equivalent to self.graph.vs.select(item_eq=item), but O(1) via
+        self._item_index instead of an O(V) linear scan.
+
+        Args:
+            item: The "item" attribute value to search for.
+
+        Returns:
+            Every vertex with a matching "item" attribute (empty if none).
+        """
+        return self.graph.vs[self._item_index.get(item, [])]
 
     def __getitem__(self, item: Union[str, int]) -> Dict[str, list]:
-        vertex = self.graph.vs.find(item_eq=item)
+        vertex = self._find_by_item(item)
         neighbor_vertices = self.graph.vs[self.graph.neighbors(vertex)]
 
         # get any vertices from vertex's neighbors that actively apply a
@@ -54,7 +113,7 @@ class RoughGranulation:
     def __div_helper(self, other) -> frozenset:
         categories = []
         # the neighbors of this vertex are the equivalence classes
-        equivalence_vertices = self.graph.vs.select(item_eq=other)
+        equivalence_vertices = self._select_by_item(other)
         for category in equivalence_vertices:
             nodes = self.graph.predecessors(category.index)
             vertices = self.graph.vs.select(nodes)
@@ -133,6 +192,7 @@ class RoughGranulation:
             assert all(
                 isinstance(tag, set) for tag in tags
             ), "Items in 'tags' must be sets."
+        start_index = self.graph.vcount()
         self.graph.add_vertices(
             len(items),
             attributes={
@@ -141,6 +201,8 @@ class RoughGranulation:
                 **kwargs,
             },
         )
+        for offset, item in enumerate(items):
+            self._register_item(item, start_index + offset)
 
     def create_compound_edges(self, args, target_vertices) -> list:
         """
@@ -182,9 +244,7 @@ class RoughGranulation:
         """
         if not isinstance(source, ig.Vertex):  # if the source is not a vertex
             try:
-                source_vertex = self.graph.vs.find(
-                    item_eq=source
-                )  # try to find its vertex
+                source_vertex = self._find_by_item(source)  # try to find its vertex
             except ValueError as exception:  # no such vertex;
                 raise ValueError(
                     f"A vertex could not be found in the graph: {source}."
@@ -194,9 +254,7 @@ class RoughGranulation:
         try:
             for target in targets:
                 if not isinstance(target, ig.Vertex):  # if the source is not a vertex
-                    target_vertex = self.graph.vs.find(
-                        item_eq=target
-                    )  # try to find its vertex
+                    target_vertex = self._find_by_item(target)  # try to find its vertex
                 else:
                     target_vertex = target
 
@@ -222,7 +280,9 @@ class RoughGranulation:
 
         vertices = []
         for _ in range(len(args)):
-            vertices.append(self.graph.add_vertex(item=attr_type, tags={"relation"}))
+            new_vertex = self.graph.add_vertex(item=attr_type, tags={"relation"})
+            self._register_item(attr_type, new_vertex.index)
+            vertices.append(new_vertex)
 
         edges = self.create_compound_edges(args, vertices)
         self.add_weighted_edges(edges)
@@ -324,7 +384,7 @@ class RoughGranulation:
             neighbors which interact with .
         """
         # get the vertices that interact w/ relation
-        vertices = self.graph.vs.select(item_eq=relation)
+        vertices = self._select_by_item(relation)
 
         return {
             frozenset(
