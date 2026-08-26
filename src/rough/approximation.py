@@ -73,6 +73,7 @@ class RoughApproximation(RoughGranulation):
         self,
         relations: Union[str, set],
         categories: Union[set, frozenset, List[frozenset]],
+        _indiscernibility_relation: Union[None, Set[frozenset]] = None,
     ) -> Union[frozenset, Set[frozenset]]:
         """
         Get the lower approximation of a (set of) category(s), as defined by Pawlak on page 10 of
@@ -82,6 +83,11 @@ class RoughApproximation(RoughGranulation):
             relations: Either a set of relations or a string that references a specific relation
             in the RoughApproximation.
             categories: The category (frozenset) or a family of categories (list of frozensets).
+            _indiscernibility_relation: Private - an already-computed
+                self.indiscernibility(relations), reused as-is instead of being
+                recomputed. Lets a caller that needs several approximations
+                against the SAME relations (e.g. quality_of_approximation()/
+                accuracy() over a family of categories) compute it once.
 
         Returns:
             Either a frozenset or a set of frozensets that represent the lower approximation.
@@ -91,12 +97,14 @@ class RoughApproximation(RoughGranulation):
             relations,
             categories,
             mode=lambda subset, category: subset.issubset(category),
+            _indiscernibility_relation=_indiscernibility_relation,
         )
 
     def upper_approximation(
         self,
         relations: Union[str, set],
         categories: Union[set, frozenset, List[frozenset]],
+        _indiscernibility_relation: Union[None, Set[frozenset]] = None,
     ) -> Union[frozenset, Set[frozenset]]:
         """
         Get the upper approximation of a (set of) category(s), as defined by Pawlak on page 10 of
@@ -106,6 +114,7 @@ class RoughApproximation(RoughGranulation):
             relations: Either a set of relations or a string that references a specific relation
             in the RoughApproximation.
             categories: The category (frozenset) or a family of categories (list of frozensets).
+            _indiscernibility_relation: Private - see lower_approximation()'s docstring.
 
         Returns:
             Either a frozenset or a set of frozensets that represent the upper approximation.
@@ -114,6 +123,7 @@ class RoughApproximation(RoughGranulation):
             relations,
             categories,
             mode=lambda subset, category: len(subset.intersection(category)) > 0,
+            _indiscernibility_relation=_indiscernibility_relation,
         )
 
     def approximation(
@@ -121,6 +131,7 @@ class RoughApproximation(RoughGranulation):
         relations: Union[str, set],
         categories: Union[set, frozenset, List[frozenset]],
         mode: callable,
+        _indiscernibility_relation: Union[None, Set[frozenset]] = None,
     ) -> Union[frozenset, Set[frozenset]]:
         """
         Get the approximation of a (set of) category(s), as defined by Pawlak on page 10 of his
@@ -138,13 +149,17 @@ class RoughApproximation(RoughGranulation):
             True if the subset is a subset of the category. In the case of the upper
             approximation, the mode function should return True if the subset intersects with the
             category.
+            _indiscernibility_relation: Private - see lower_approximation()'s docstring. When
+                None (the default, and every existing external call site), it is computed here
+                via self.indiscernibility(relations) exactly as before.
 
         Returns:
             Either a frozenset or a set of frozensets that represent the [mode] approximation.
         """
+        if _indiscernibility_relation is None:
+            _indiscernibility_relation = self.indiscernibility(relations)
 
         def __approximation(
-            relations: Union[str, set],
             category: frozenset,
             satisfied_constraint: callable,
         ) -> frozenset:
@@ -152,9 +167,7 @@ class RoughApproximation(RoughGranulation):
             Get the approximation of a category.
 
             Args:
-                relations: Either a set of relations or a string that references a specific relation
-                in the RoughApproximation.
-                categories: The category (frozenset) or a family of categories (list of frozensets).
+                category: The category (frozenset) to approximate.
                 satisfied_constraint: The constraint that is to be satisfied or otherwise
                 known as the mode of approximation, which is a function that takes two arguments: a
                 subset and a category. The mode function should return True if the subset satisfies
@@ -166,9 +179,8 @@ class RoughApproximation(RoughGranulation):
             Returns:
                 A frozenset of the approximation.
             """
-            indiscernibility_relation = self.indiscernibility(relations)
             result = set()
-            for subset in indiscernibility_relation:
+            for subset in _indiscernibility_relation:
                 if satisfied_constraint(subset, category):
                     result = result.union(subset)
             return frozenset(result)
@@ -183,9 +195,9 @@ class RoughApproximation(RoughGranulation):
                     raise ValueError(
                         "The argument 'categories' may not have an element with a length of zero."
                     )
-                result.add(__approximation(relations, category, mode))
+                result.add(__approximation(category, mode))
         elif isinstance(categories, (set, frozenset)):
-            result = __approximation(relations, categories, mode)
+            result = __approximation(categories, mode)
         else:
             raise ValueError(
                 "The argument 'categories' must be a set, a frozenset, or a list."
@@ -286,55 +298,38 @@ class RoughApproximation(RoughGranulation):
         """
         lower_approximation = self.lower_approximation(relations, category)
         upper_approximation = self.upper_approximation(relations, category)
+        universe = frozenset(self.select_by_tags(tags="element")["item"])
 
+        def _result(name: str) -> namedtuple:
+            return namedtuple(name, ["lower_approximation", "upper_approximation"])(
+                lower_approximation, upper_approximation
+            )
+
+        # lower_approximation is always a subset of upper_approximation (every
+        # subset satisfying the lower/"issubset" constraint also satisfies the
+        # upper/"intersects" constraint), so exactly one of the following five
+        # cases always applies - there is no sixth, "otherwise" case.
         if lower_approximation == upper_approximation:
             # The set X is called R-definable if X is the union of some R-basic categories;
             # otherwise X is R-undefinable. Also called R-exact sets. R-undefinable sets are also
             # called R-inexact or R-rough sets.
-            return namedtuple(
-                "Definable", ["lower_approximation", "upper_approximation"]
-            )(lower_approximation, upper_approximation)
-        if len(
-            self.lower_approximation(relations, category)
-        ) > 0 and self.upper_approximation(relations, category) != frozenset(
-            self.select_by_tags(tags="element")["item"]
-        ):
+            return _result("Definable")
+        if len(lower_approximation) > 0 and upper_approximation != universe:
             # We are able to decide whether some elements of the universe
             # belong to X or not X.
-            return namedtuple(
-                "RoughlyDefinable", ["lower_approximation", "upper_approximation"]
-            )(lower_approximation, upper_approximation)
-        if len(
-            self.lower_approximation(relations, category)
-        ) == 0 and self.upper_approximation(relations, category) != frozenset(
-            self.select_by_tags(tags="element")["item"]
-        ):
+            return _result("RoughlyDefinable")
+        if len(lower_approximation) == 0 and upper_approximation != universe:
             # We are able to decide whether some elements of the universe belong to not X,
             # but we are unable to indicate one element of X.
-            return namedtuple(
-                "InternallyUndefinable", ["lower_approximation", "upper_approximation"]
-            )(lower_approximation, upper_approximation)
-        if len(
-            self.lower_approximation(relations, category)
-        ) != 0 and self.upper_approximation(relations, category) == frozenset(
-            self.select_by_tags(tags="element")["item"]
-        ):
+            return _result("InternallyUndefinable")
+        if len(lower_approximation) != 0 and upper_approximation == universe:
             # We are able to decide for some elements of the universe whether they belong to X,
             # but we are unable to indicate one element of not X.
-            return namedtuple(
-                "ExternallyUndefinable", ["lower_approximation", "upper_approximation"]
-            )(lower_approximation, upper_approximation)
-        if len(
-            self.lower_approximation(relations, category)
-        ) == 0 and self.upper_approximation(relations, category) == frozenset(
-            self.select_by_tags(tags="element")["item"]
-        ):
-            # We are unable to decide for any element of the universe whether
-            # it belongs to X or not X.
-            return namedtuple(
-                "TotallyUndefinable", ["lower_approximation", "upper_approximation"]
-            )(lower_approximation, upper_approximation)
-        raise ValueError("The given category is not definable or roughly definable.")
+            return _result("ExternallyUndefinable")
+        # the only remaining case: len(lower_approximation) == 0 and
+        # upper_approximation == universe - we are unable to decide for any
+        # element of the universe whether it belongs to X or not X.
+        return _result("TotallyUndefinable")
 
     def quality_of_approximation(self, relations, categories):
         """
@@ -354,14 +349,24 @@ class RoughApproximation(RoughGranulation):
         if len(categories) == 0:
             raise ValueError("The argument 'categories' may not have a length of zero.")
         if isinstance(categories, Iterable) and isinstance(categories, list):
-            # categories is a family of non-empty sets
+            # categories is a family of non-empty sets - compute the
+            # indiscernibility relation once and reuse it for every category,
+            # instead of lower_approximation() recomputing it from scratch on
+            # every iteration (relations is fixed across this whole loop)
+            indiscernibility_relation = self.indiscernibility(relations)
             numerator = 0.0
             for category in categories:
                 if len(category) == 0:
                     raise ValueError(
                         "The argument 'category' may not have an element with a length of zero."
                     )
-                numerator += len(self.lower_approximation(relations, category))
+                numerator += len(
+                    self.lower_approximation(
+                        relations,
+                        category,
+                        _indiscernibility_relation=indiscernibility_relation,
+                    )
+                )
         else:
             numerator = len(self.lower_approximation(relations, categories))
         denominator = len(frozenset(self.select_by_tags(tags="element")["item"]))
@@ -486,15 +491,31 @@ class RoughApproximation(RoughGranulation):
         if len(category) == 0:
             raise ValueError("The argument 'category' may not have a length of zero.")
         if isinstance(category, Iterable) and isinstance(category, list):
-            # category is a family of non-empty sets
+            # category is a family of non-empty sets - compute the
+            # indiscernibility relation once and reuse it for both
+            # lower_approximation() and upper_approximation(), for every
+            # set_x_i, instead of each recomputing it from scratch
+            indiscernibility_relation = self.indiscernibility(relations)
             numerator, denominator = 0.0, 0.0
             for set_x_i in category:
                 if len(set_x_i) == 0:
                     raise ValueError(
                         "The argument 'category' may not have an element with a length of zero."
                     )
-                numerator += len(self.lower_approximation(relations, set_x_i))
-                denominator += len(self.upper_approximation(relations, set_x_i))
+                numerator += len(
+                    self.lower_approximation(
+                        relations,
+                        set_x_i,
+                        _indiscernibility_relation=indiscernibility_relation,
+                    )
+                )
+                denominator += len(
+                    self.upper_approximation(
+                        relations,
+                        set_x_i,
+                        _indiscernibility_relation=indiscernibility_relation,
+                    )
+                )
         else:
             numerator = len(self.lower_approximation(relations, category))
             denominator = len(self.upper_approximation(relations, category))
