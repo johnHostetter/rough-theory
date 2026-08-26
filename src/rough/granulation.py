@@ -50,11 +50,73 @@ class RoughGranulation:
         """
         self._item_index.setdefault(item, []).append(vertex_index)
 
+    def _rebuild_item_index(self) -> None:
+        """
+        Rebuild self._item_index from scratch by scanning every vertex's
+        current "item" attribute.
+
+        Needed because code outside this class (e.g. fuzzy-theory's
+        KnowledgeBase, a subclass of a subclass of this one) sometimes
+        reassigns an existing vertex's "item" attribute directly
+        (`vertex["item"] = ...`) instead of going through _register_item(),
+        and igraph re-numbers every vertex's index after any deletion - both
+        silently desync self._item_index from the real graph. _resolve_indices()
+        calls this once, only when its cheap verification against the live
+        graph fails, so the common (already-consistent) case stays O(1).
+
+        Returns:
+            None
+        """
+        self._item_index = {}
+        for index, item in enumerate(self.graph.vs["item"]):
+            self._register_item(item, index)
+
+    def _resolve_indices(self, item: Any) -> List[int]:
+        """
+        Return every vertex index whose CURRENT "item" attribute actually
+        equals `item` right now - not just whatever self._item_index last
+        recorded, which _rebuild_item_index()'s docstring explains can go
+        stale. Vertex indices are also range-checked, since a deletion
+        elsewhere can shrink the graph out from under a cached index.
+
+        On a miss, this always rebuilds and retries once before giving up -
+        it is tempting to skip the rebuild when `item` was never a key in
+        self._item_index at all (reasoning "it was never registered, so it
+        can't be here"), but that reasoning is unsound: an external
+        reassignment (see _rebuild_item_index()'s docstring) can give a
+        vertex an "item" value that was never indexed under that value
+        before at all, not just a stale one. A genuine miss costs one O(V)
+        rebuild either way - the same cost this class had for every lookup
+        before this index existed - so this only matters for the
+        already-exceptional not-found path, not the hot one.
+
+        Args:
+            item: The "item" attribute value to search for.
+
+        Returns:
+            Every currently-valid vertex index with a matching "item"
+            attribute (empty if none).
+        """
+        vertex_count = self.graph.vcount()
+        matches = [
+            index
+            for index in self._item_index.get(item, [])
+            if index < vertex_count and self.graph.vs[index]["item"] == item
+        ]
+        if matches:
+            return matches
+        self._rebuild_item_index()
+        return [
+            index
+            for index in self._item_index.get(item, [])
+            if self.graph.vs[index]["item"] == item
+        ]
+
     def _find_by_item(self, item: Any) -> ig.Vertex:
         """
-        Equivalent to self.graph.vs.find(item_eq=item), but O(1) via
-        self._item_index instead of an O(V) linear scan. Returns the first
-        vertex registered with this item, matching igraph's own find()
+        Equivalent to self.graph.vs.find(item_eq=item), but O(1) (amortized)
+        via self._item_index instead of an O(V) linear scan. Returns the
+        first vertex registered with this item, matching igraph's own find()
         semantics when multiple vertices share the same "item" value.
 
         Args:
@@ -66,15 +128,15 @@ class RoughGranulation:
         Raises:
             ValueError: If no vertex has this "item" attribute.
         """
-        indices = self._item_index.get(item)
-        if not indices:
+        matches = self._resolve_indices(item)
+        if not matches:
             raise ValueError("no such vertex")
-        return self.graph.vs[indices[0]]
+        return self.graph.vs[matches[0]]
 
     def _select_by_item(self, item: Any) -> ig.VertexSeq:
         """
-        Equivalent to self.graph.vs.select(item_eq=item), but O(1) via
-        self._item_index instead of an O(V) linear scan.
+        Equivalent to self.graph.vs.select(item_eq=item), but O(1) (amortized)
+        via self._item_index instead of an O(V) linear scan.
 
         Args:
             item: The "item" attribute value to search for.
@@ -82,7 +144,7 @@ class RoughGranulation:
         Returns:
             Every vertex with a matching "item" attribute (empty if none).
         """
-        return self.graph.vs[self._item_index.get(item, [])]
+        return self.graph.vs[self._resolve_indices(item)]
 
     def __getitem__(self, item: Union[str, int]) -> Dict[str, list]:
         vertex = self._find_by_item(item)

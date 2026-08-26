@@ -16,6 +16,14 @@ _select_by_item methods and cross-check their results against igraph's own
 item_eq scan, to prove the index is behaviorally equivalent - not merely "does
 something" - rather than only exercising it incidentally through higher-level
 methods.
+
+TestItemIndexSelfHealing covers a real regression this index caused:
+fuzzy-theory's KnowledgeBase (a subclass of a subclass of this class)
+reassigns an existing vertex's "item" attribute directly
+(`vertex["item"] = ...`) in a couple of places, bypassing _register_item()
+entirely - confirmed by running fuzzy-theory's own test suite against this
+index (not assumed), which failed with `ValueError: no such vertex` before
+_resolve_indices()'s verify-and-rebuild-on-miss logic was added.
 """
 
 import unittest
@@ -130,6 +138,76 @@ class TestItemIndex(unittest.TestCase):
 
         matches = granulation._select_by_item("R")  # pylint: disable=protected-access
         self.assertEqual(len(matches), 3)
+
+
+class TestItemIndexSelfHealing(unittest.TestCase):
+    """
+    Covers _resolve_indices()'s recovery from the two ways self._item_index
+    can desync from the live graph: an external, direct reassignment of a
+    vertex's "item" attribute (bypassing _register_item()), and igraph
+    re-numbering vertex indices after a deletion.
+    """
+
+    def test_finds_an_externally_reassigned_item(self) -> None:
+        """
+        The exact shape of the real bug this caused: some vertex's "item" is
+        reassigned directly (not via _register_item()) to a value that was
+        NEVER indexed before at all - not merely a value that moved. The old
+        implementation's "skip the rebuild if this item was never a key"
+        shortcut would incorrectly treat this as a genuine miss.
+        """
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2"], tags="element")
+        vertex = granulation._find_by_item("x1")  # pylint: disable=protected-access
+
+        granulation.graph.vs[vertex.index]["item"] = "x1_renamed"
+
+        found = granulation._find_by_item(  # pylint: disable=protected-access
+            "x1_renamed"
+        )
+        self.assertEqual(found.index, vertex.index)
+
+    def test_finds_an_item_after_an_unrelated_vertex_is_deleted(self) -> None:
+        """
+        Deleting any vertex re-numbers every vertex after it - a cached
+        index for a still-present, never-reassigned item can end up
+        pointing at the wrong vertex (or an out-of-range one) once that
+        happens.
+        """
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2", "x3"], tags="element")
+        x3_before = granulation._find_by_item("x3")  # pylint: disable=protected-access
+        self.assertEqual(x3_before.index, 2)
+
+        granulation.graph.delete_vertices([0])  # deletes x1's vertex
+
+        x3_after = granulation._find_by_item("x3")  # pylint: disable=protected-access
+        self.assertEqual(x3_after["item"], "x3")
+        self.assertEqual(x3_after.index, 1)  # shifted down by the deletion
+
+    def test_select_by_item_also_recovers_after_reassignment(self) -> None:
+        """
+        _select_by_item() shares _resolve_indices() with _find_by_item() -
+        confirm the multi-match path also self-heals, not just the
+        single-match one.
+        """
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2"], tags="element")
+        granulation.add_parent_relation("R", ({"x1"}, {"x2"}))
+        r_vertices = list(
+            granulation._select_by_item("R")  # pylint: disable=protected-access
+        )
+        self.assertEqual(len(r_vertices), 2)
+
+        granulation.graph.vs[r_vertices[0].index]["item"] = "R_renamed"
+
+        still_r = granulation._select_by_item("R")  # pylint: disable=protected-access
+        self.assertEqual(len(still_r), 1)
+        renamed = granulation._select_by_item(  # pylint: disable=protected-access
+            "R_renamed"
+        )
+        self.assertEqual(len(renamed), 1)
+        self.assertEqual(renamed[0].index, r_vertices[0].index)
 
 
 class TestCreateCompoundEdgesHelperItemLookup(unittest.TestCase):
