@@ -244,9 +244,13 @@ class RoughGranulation:
             None
         """
         if isinstance(tags, str):
-            tags = [{tags}] * len(items)
+            # a fresh set per vertex - `[{tags}] * len(items)` would instead
+            # give every vertex the SAME mutable set object, so mutating one
+            # vertex's tags in place (e.g. via `.add()`) would silently
+            # affect every other vertex added in this same call too
+            tags = [{tags} for _ in items]
         elif isinstance(tags, set):
-            tags = [tags] * len(items)
+            tags = [set(tags) for _ in items]
         elif tags is not None:  # if tags is a list of sets
             assert len(items) == len(
                 tags
@@ -389,8 +393,15 @@ class RoughGranulation:
         if file_format in file_formats:  # https://graphviz.org/docs/outputs/
             render_engines = ["twopi", "sfdp", "dot"]
             if engine in render_engines:  # https://graphviz.org/docs/layouts/
-                graphviz.render(
-                    format=file_format, filepath=f"{filename}", engine=engine
+                graphviz.render(  # pragma: no cover
+                    # requires a real graphviz install (the dot/twopi/sfdp
+                    # system binaries), not guaranteed to be present in a
+                    # test environment - the two branches above/below that
+                    # validate file_format/engine before reaching this line
+                    # are exercised directly instead (see tests)
+                    format=file_format,
+                    filepath=f"{filename}",
+                    engine=engine,
                 )
             else:
                 raise UserWarning(
@@ -412,11 +423,23 @@ class RoughGranulation:
 
         Returns:
             The family intersection.
+
+        Raises:
+            ValueError: If 'relative_to' is empty. Unlike an empty union (unambiguously
+                the empty set), the intersection of an empty family of sets is
+                mathematically undefined without a fixed universe to intersect within,
+                so this cannot silently return a value.
         """
 
         categories = [
             next(iter(category)) for category in (self / relative_to).values()
         ]
+        if not categories:
+            raise ValueError(
+                "Cannot compute the family intersection of an empty family "
+                f"'relative_to'={relative_to!r}: the intersection of zero sets is "
+                "undefined."
+            )
         return frozenset.intersection(*categories)
 
     def family_union(self, relative_to: set) -> frozenset:
@@ -427,11 +450,14 @@ class RoughGranulation:
             relative_to: A selection of relations.
 
         Returns:
-            The family union.
+            The family union. The union of an empty family is unambiguously the
+            empty set (frozenset()).
         """
         categories = [
             next(iter(category)) for category in (self / relative_to).values()
         ]
+        if not categories:
+            return frozenset()
         return frozenset.union(*categories)
 
     def edges(self, relation: str) -> Set[frozenset]:

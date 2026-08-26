@@ -55,14 +55,11 @@ class RoughDecisions(RoughOperations):
         keys = itertools.combinations(
             frozenset(self.select_by_tags(tags="element")["item"]), r=2
         )
-        matrix = {
-            frozenset(key): (
-                frozenset(relations)
-                if len(set(key)) > 1 and key[0] != key[1]
-                else set()
-            )
-            for key in keys
-        }
+        # every `key` is a pair drawn (without replacement) from a frozenset,
+        # so its two elements are always distinct - the "else: set()" branch
+        # this used to have (guarded by `len(set(key)) > 1 and key[0] !=
+        # key[1]`) could therefore never actually be taken
+        matrix = {frozenset(key): frozenset(relations) for key in keys}
 
         if decision_attributes is not None:
             # Remove any pair-wise comparisons between objects that appear indiscernable
@@ -84,16 +81,20 @@ class RoughDecisions(RoughOperations):
             matrix: The discernibility matrix.
 
         Returns:
-            The CORE.
+            The CORE. An empty CORE (no singleton matrix entries at all) is a
+            normal, valid rough-set outcome, not an error.
         """
         relation_subsets = list(matrix.values())  # all subsets found in the matrix
         relation_subsets.sort(
             key=len
         )  # smaller sets start at 0, larger sets near end of list
         # each matrix entry that is a singleton set belongs to the CORE set
-        return frozenset.union(
-            *[relations for relations in relation_subsets if len(relations) == 1]
-        )
+        singletons = [
+            relations for relations in relation_subsets if len(relations) == 1
+        ]
+        if not singletons:
+            return frozenset()
+        return frozenset.union(*singletons)
 
     def __find_reduct_by_matrix(self, matrix):
         # all subsets found in the matrix
@@ -173,11 +174,14 @@ class RoughDecisions(RoughOperations):
         consistent_table = self.find_relative_positive_region(
             condition_attributes, decision_attributes
         )
-        inconsistent_table = frozenset.union(
-            *[
-                self.boundary_region(condition_attributes, X)
-                for X in self.indiscernibility(decision_attributes)
-            ]
+        boundary_regions = [
+            self.boundary_region(condition_attributes, X)
+            for X in self.indiscernibility(decision_attributes)
+        ]
+        # no boundary regions at all means nothing is inconsistent - the
+        # empty set, not an error
+        inconsistent_table = (
+            frozenset.union(*boundary_regions) if boundary_regions else frozenset()
         )
         return consistent_table, inconsistent_table
 
@@ -207,6 +211,14 @@ class RoughDecisions(RoughOperations):
                     for key, value in attr_partitions.items()
                     if key in selected_condition_attributes
                 }
+                if not family_of_condition_attributes:
+                    # none of selected_condition_attributes are actually
+                    # defined for this element (indiscernibility()'s own
+                    # docstring notes some elements aren't defined for every
+                    # relation) - there is no decision_category to compare,
+                    # so this combination cannot be evaluated; skip it rather
+                    # than crash on frozenset.intersection() with no args
+                    continue
                 decision_category = frozenset.intersection(
                     *family_of_condition_attributes.values()
                 )
@@ -256,6 +268,11 @@ class RoughDecisions(RoughOperations):
                         for key, value in attr_partitions.items()
                         if key in selected_condition_attributes
                     }
+                    if not family_of_condition_attributes:
+                        # see the matching guard in find_attribute_cores() -
+                        # none of selected_condition_attributes apply to this
+                        # element, so there is nothing to evaluate here
+                        continue
                     decision_category = frozenset.intersection(
                         *family_of_condition_attributes.values()
                     )

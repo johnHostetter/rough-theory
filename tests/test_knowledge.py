@@ -638,3 +638,24 @@ class TestReductionOfCategories(unittest.TestCase):
         assert self.knowledge_base.y_dispensable(set_f, "T", "Z")  # Z is T-dispensable
 
         assert not self.knowledge_base.y_independent(set_f, "Y")
+
+
+class TestFamilyIntersectionUnionOnEmptyFamily(unittest.TestCase):
+    """
+    Regression tests: family_intersection()/family_union() used to crash with a
+    bare TypeError (frozenset.intersection()/union() called with no arguments) for
+    an empty 'relative_to' family. An empty union is unambiguously the empty set;
+    an empty intersection has no such well-defined answer without a fixed universe,
+    so it must raise a clear error instead.
+    """
+
+    def setUp(self) -> None:
+        self.knowledge_base = RoughOperations()
+        self.knowledge_base.set_granules(["x1", "x2"], tags="element")
+
+    def test_family_intersection_raises_for_an_empty_family(self) -> None:
+        with self.assertRaisesRegex(ValueError, "intersection of zero sets"):
+            self.knowledge_base.family_intersection(set())
+
+    def test_family_union_returns_empty_frozenset_for_an_empty_family(self) -> None:
+        self.assertEqual(self.knowledge_base.family_union(set()), frozenset())

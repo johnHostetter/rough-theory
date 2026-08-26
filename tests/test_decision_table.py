@@ -140,3 +140,65 @@ class TestSimplificationOfDecisionTable(unittest.TestCase):
             6: {frozenset({"a"}), frozenset({"d"})},
             7: {frozenset({"a"}), frozenset({"d"}), frozenset({"b"})},
         }
+
+    def test_find_attribute_cores_skips_attributes_undefined_for_an_element(
+        self,
+    ) -> None:
+        """
+        Regression test: if none of a selected-attribute combination's members
+        are actually defined for a given element (indiscernibility()'s own
+        docstring notes "some elements might not be defined for all
+        relations"), family_of_condition_attributes ends up empty and
+        `frozenset.intersection(*[])` used to crash with a bare TypeError. Such
+        a combination must be skipped instead - here "never_a_relation" is
+        included in minimal_condition_attributes but was never added to the
+        knowledge base at all, so it's undefined for every element.
+        """
+        core_attributes = self.knowledge_base.find_attribute_cores(
+            frozenset({"a", "never_a_relation"})
+        )
+        # must not raise, and "a" alone (the only real relation) is used for
+        # every element's evaluation
+        self.assertIsInstance(core_attributes, dict)
+
+    def test_find_attribute_reducts_skips_attributes_undefined_for_an_element(
+        self,
+    ) -> None:
+        """
+        Same regression as above, for find_attribute_reducts()'s matching guard.
+        """
+        reduct_attributes = self.knowledge_base.find_attribute_reducts(
+            frozenset({"a", "never_a_relation"})
+        )
+        self.assertIsInstance(reduct_attributes, dict)
+        # "a" alone must still be found as a valid reduct for every element,
+        # proving the real combination wasn't skipped too, just the bogus one
+        self.assertTrue(
+            all(frozenset({"a"}) in reducts for reducts in reduct_attributes.values())
+        )
+
+
+class TestDecomposeDecisionTableWithNoBoundaryRegions(unittest.TestCase):
+    """
+    Regression test for decompose_decision_table()'s empty-union guard: with no
+    boundary regions at all, `frozenset.union(*[])` used to crash with a bare
+    TypeError, even though "nothing is inconsistent" (the empty set) is the
+    mathematically correct, unambiguous answer.
+    """
+
+    def test_returns_empty_inconsistent_table_when_relations_fully_determine_decisions(
+        self,
+    ) -> None:
+        """
+        When condition_attributes fully determine decision_attributes (every
+        boundary_region is empty), the union of zero non-empty boundary regions
+        must be frozenset(), not a crash.
+        """
+        knowledge_base = RoughDecisions()
+        knowledge_base.set_granules(["x1", "x2", "x3", "x4"], tags="element")
+        knowledge_base.add_parent_relation("a", ({"x1", "x2"}, {"x3", "x4"}))
+        knowledge_base.add_parent_relation("d", ({"x1", "x2"}, {"x3", "x4"}))
+
+        consistent, inconsistent = knowledge_base.decompose_decision_table({"a"}, {"d"})
+        self.assertEqual(inconsistent, frozenset())
+        self.assertEqual(consistent, frozenset({"x1", "x2", "x3", "x4"}))

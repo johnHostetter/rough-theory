@@ -26,6 +26,7 @@ index (not assumed), which failed with `ValueError: no such vertex` before
 _resolve_indices()'s verify-and-rebuild-on-miss logic was added.
 """
 
+import os
 import unittest
 
 from rough.granulation import RoughGranulation
@@ -279,6 +280,67 @@ class TestCreateCompoundEdgesHelperItemLookup(unittest.TestCase):
         expected_targets = {v.index for v in target_vertices}
         actual_targets = {target_index for _, target_index in edges}
         self.assertEqual(actual_targets, expected_targets)
+
+
+class TestSetGranulesTagsAreIndependentPerVertex(unittest.TestCase):
+    """
+    Regression test: set_granules() used to give every vertex added in the SAME
+    call the identical mutable set object for "tags" (`[{tags}] * len(items)`/
+    `[tags] * len(items)`), rather than an independent copy per vertex - a latent
+    aliasing bug (not yet triggered by any current caller, since none mutate a
+    vertex's tags set in place, but a real landmine for any future one that does).
+    """
+
+    def test_mutating_one_vertex_tags_via_string_form_does_not_affect_another(
+        self,
+    ) -> None:
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2"], tags="element")
+
+        first_tags, second_tags = granulation.graph.vs["tags"]
+        self.assertIsNot(first_tags, second_tags)
+        first_tags.add("mutated")
+        self.assertNotIn("mutated", second_tags)
+
+    def test_mutating_one_vertex_tags_via_set_form_does_not_affect_another(
+        self,
+    ) -> None:
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2"], tags={"element", "extra"})
+
+        first_tags, second_tags = granulation.graph.vs["tags"]
+        self.assertIsNot(first_tags, second_tags)
+        first_tags.add("mutated")
+        self.assertNotIn("mutated", second_tags)
+
+
+class TestExportVisualValidation(unittest.TestCase):
+    """
+    Coverage/regression tests for export_visual()'s two input-validation raise
+    branches, which don't require an actual graphviz install (the dot/twopi/sfdp
+    system binaries) since they raise before ever reaching graphviz.render().
+    """
+
+    def setUp(self) -> None:
+        self.granulation = RoughGranulation()
+        self.granulation.set_granules(["x1", "x2"], tags="element")
+        self.dot_path = "test_export_visual_tmp.dot"
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.dot_path):
+            os.remove(self.dot_path)
+
+    def test_raises_for_an_unsupported_file_format(self) -> None:
+        with self.assertRaisesRegex(UserWarning, "png.*svg.*svgz.*pdf"):
+            self.granulation.export_visual(
+                "test_export_visual_tmp", file_format="bogus_format"
+            )
+
+    def test_raises_for_an_unsupported_engine(self) -> None:
+        with self.assertRaisesRegex(UserWarning, "twopi.*sfdp.*dot"):
+            self.granulation.export_visual(
+                "test_export_visual_tmp", file_format="png", engine="bogus_engine"
+            )
 
 
 if __name__ == "__main__":

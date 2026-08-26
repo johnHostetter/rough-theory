@@ -89,3 +89,33 @@ class TestDiscernibility(unittest.TestCase):
             frozenset({3, 5}): {"c", "b"},
             frozenset({4, 5}): {"a"},
         }
+
+
+class TestFindCoreByMatrixEmptyCore(unittest.TestCase):
+    """
+    Regression test for find_core_by_matrix()'s empty-CORE guard: the CORE is the
+    union of every singleton matrix entry - with zero singleton entries, that used
+    to crash with a bare TypeError (frozenset.union() with no arguments), even
+    though an empty CORE is itself a perfectly normal, valid outcome (unlike an
+    empty *intersection*, which is undefined - see find_core()'s own guard).
+    """
+
+    def test_returns_empty_frozenset_when_no_matrix_entry_is_a_singleton(
+        self,
+    ) -> None:
+        """
+        Two fully redundant relations ("P" and "Q" identical partitions) make
+        every non-empty discernibility-matrix entry contain BOTH of them (never
+        just one alone), so there are no singleton entries at all.
+        """
+        knowledge_base = RoughDecisions()
+        knowledge_base.set_granules(["x1", "x2", "x3", "x4"], tags="element")
+        knowledge_base.add_parent_relation("P", ({"x1", "x2"}, {"x3", "x4"}))
+        knowledge_base.add_parent_relation("Q", ({"x1", "x2"}, {"x3", "x4"}))
+
+        matrix = knowledge_base.discernibility_matrix({"P", "Q"})
+        self.assertTrue(
+            all(len(value) != 1 for value in matrix.values()),
+            "test premise violated: matrix must have no singleton entries",
+        )
+        self.assertEqual(knowledge_base.find_core_by_matrix(matrix), frozenset())
