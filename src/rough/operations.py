@@ -97,9 +97,16 @@ class RoughOperations(RoughApproximation):
 
         """
         if categories_h.issubset(categories_f):
+            # category_y is a relation NAME (str), like y_independent()'s own
+            # category_y param it's forwarded to - `.issubset(category_y)`
+            # directly would treat that string as an iterable of its
+            # characters (the same class of bug _as_relation_set() above
+            # fixes for dispensable()), not the itemset the relation actually
+            # represents. Unpack it the same way y_dispensable() does.
+            (y_items,) = self.edges(category_y)
             return self.y_independent(
                 categories_h, category_y
-            ) and self.family_intersection(categories_h).issubset(category_y)
+            ) and self.family_intersection(categories_h).issubset(y_items)
         raise ValueError(
             "The set 'categories_h' must be a subset of the family set 'categories_f'."
         )

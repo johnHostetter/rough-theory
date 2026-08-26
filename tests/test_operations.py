@@ -195,6 +195,87 @@ class TestIsYReductOfFRaises(unittest.TestCase):
             knowledge_base.is_y_reduct_of_f({"X"}, {"X", "Y"}, "T")
 
 
+class TestYIndependentAndIsYReductOfFSuccessPaths(unittest.TestCase):
+    """
+    Coverage/regression tests for y_independent()'s "every category is
+    indispensable" True path, and is_y_reduct_of_f()'s success path (which
+    calls into it) - previously only their False/raising paths were tested.
+
+    Also a regression test for a real bug caught while constructing this:
+    is_y_reduct_of_f() used to compare family_intersection(categories_h)
+    against the bare category_y string directly
+    (`.issubset(category_y)`) instead of the itemset that relation
+    actually represents - the same "string treated as an iterable of its
+    characters" mistake _as_relation_set() was written to fix for
+    dispensable() (see TestDispensableWithMultiCharacterRelationNames).
+    Since frozenset({"x2", "x3"}).issubset("T") is trivially False (a
+    single-character relation name can never contain a 2+ character
+    subset), this made is_y_reduct_of_f() return False unconditionally
+    for any non-trivial family_intersection - fixed to unpack
+    self.edges(category_y) first, mirroring y_dispensable()'s own pattern.
+    """
+
+    def setUp(self) -> None:
+        self.knowledge_base = RoughOperations()
+        self.knowledge_base.set_granules(
+            ["x1", "x2", "x3", "x4", "x5", "x6"], tags="element"
+        )
+        # X and Y are both indispensable in {X, Y}: dropping either one
+        # loses the property that family_intersection(...) is a subset of
+        # T's itemset {x2, x3}.
+        self.knowledge_base.add_parent_relation("X", {frozenset({"x1", "x2", "x3"})})
+        self.knowledge_base.add_parent_relation("Y", {frozenset({"x2", "x3", "x4"})})
+        self.knowledge_base.add_parent_relation("T", {frozenset({"x2", "x3"})})
+
+    def test_y_independent_returns_true_when_no_category_is_dispensable(self) -> None:
+        self.assertTrue(self.knowledge_base.y_independent({"X", "Y"}, "T"))
+
+    def test_is_y_reduct_of_f_returns_true_for_a_genuine_y_reduct(self) -> None:
+        self.assertTrue(
+            self.knowledge_base.is_y_reduct_of_f({"X", "Y"}, {"X", "Y"}, "T")
+        )
+
+
+class TestEquivalentTo(unittest.TestCase):
+    """
+    Coverage/regression tests for equivalent_to() - previously untested.
+    """
+
+    def setUp(self) -> None:
+        self.knowledge_base = RoughOperations()
+        self.knowledge_base.set_granules(list(range(1, 9)), tags="element")
+        # Q depends on P (see test_dependency.py's test_depends_on), so
+        # {P, Q} and {P} alone characterize the universe identically.
+        self.knowledge_base.add_parent_relation(
+            "P", ({1, 5}, {2, 8}, {3}, {4}, {6}, {7})
+        )
+        self.knowledge_base.add_parent_relation("Q", ({1, 5}, {2, 7, 8}, {3, 4, 6}))
+
+    def test_true_when_relations_derive_each_other(self) -> None:
+        self.assertTrue(self.knowledge_base.equivalent_to({"P", "Q"}, {"P"}))
+
+    def test_false_when_relations_do_not_derive_each_other(self) -> None:
+        self.assertFalse(self.knowledge_base.equivalent_to({"P"}, {"Q"}))
+
+
+class TestIsQReductOfP(unittest.TestCase):
+    """
+    Coverage/regression test for is_q_reduct_of_p() - previously untested.
+    """
+
+    def test_true_when_set_s_is_the_whole_family(self) -> None:
+        """
+        The trivial case (S == P) is always a Q-reduct of itself: comparing
+        POS_S(Q) to POS_P(Q) compares the same computation to itself.
+        """
+        knowledge_base = RoughOperations()
+        knowledge_base.set_granules(list(range(1, 9)), tags="element")
+        knowledge_base.add_parent_relation("P", ({1, 5}, {2, 8}, {3}, {4}, {6}, {7}))
+        knowledge_base.add_parent_relation("Q", ({1, 5}, {2, 7, 8}, {3, 4, 6}))
+
+        self.assertTrue(knowledge_base.is_q_reduct_of_p("P", "Q", "P"))
+
+
 class TestDispensableRelativeToRaises(unittest.TestCase):
     """
     Coverage/regression test for dispensable()'s relative_to != None branch's
