@@ -2,29 +2,32 @@
 Implements the methods required to work with rough theory.
 """
 
-from collections.abc import Iterable
-from itertools import chain, combinations
 from typing import List, Tuple, Union
 
 from rough.approximation import RoughApproximation
+from rough.utils import powerset
 
 
-def powerset(iterable: Iterable, min_items: int):
+def _as_relation_set(relation: Union[str, set, frozenset]) -> frozenset:
     """
-    Get the powerset of an iterable.
+    Wrap a single relation for use with set difference (`relations - ...`).
+
+    `frozenset(relation)`/`set(relation)` treat a *string* as an iterable of
+    its characters rather than as one element - fine for a single-character
+    relation name (masking the bug in every existing example), but silently
+    wrong for any real, multi-character relation name (e.g. "temperature"),
+    where it would remove none of the intended relation and every character
+    that happens to also be a single-character relation name instead.
 
     Args:
-        iterable: An iterable collection of elements.
-        min_items: The minimum number of items that must be in each subset.
+        relation: A single relation, either its name (str) or an
+            already-a-set/frozenset form (e.g. a singleton set).
 
     Returns:
-        The powerset of the given iterable.
+        A frozenset containing exactly this one relation (or, if `relation`
+        is already a set/frozenset, its elements).
     """
-    # https://stackoverflow.com/questions/1482308/how-to-get-all-subsets-of-a-set-powerset
-    return chain.from_iterable(
-        combinations(list(iterable), r)
-        for r in range(min_items, len(list(iterable)) + 1)
-    )
+    return frozenset({relation}) if isinstance(relation, str) else frozenset(relation)
 
 
 class RoughOperations(RoughApproximation):
@@ -128,10 +131,10 @@ class RoughOperations(RoughApproximation):
         if relative_to is None:
             try:
                 return mode(relations, relative_to) == mode(
-                    relations - frozenset(relation), relative_to
+                    relations - _as_relation_set(relation), relative_to
                 )
             except TypeError:  # e.g., indiscernibility
-                return mode(relations) == mode(relations - frozenset(relation))
+                return mode(relations) == mode(relations - _as_relation_set(relation))
         else:
             if relation in relations or (
                 isinstance(relation, set)
@@ -141,7 +144,7 @@ class RoughOperations(RoughApproximation):
                 return self.find_relative_positive_region(
                     relations, relative_to
                 ) == self.find_relative_positive_region(
-                    relations - set(relation), relative_to
+                    relations - _as_relation_set(relation), relative_to
                 )
             raise ValueError("The 'relation' must be an element of 'relations'.")
 
@@ -289,9 +292,17 @@ class RoughOperations(RoughApproximation):
         if relative_to is None or relations == relative_to:  # calculate CORE
             if mode is None:
                 mode = self.indiscernibility
-            return frozenset.intersection(
-                *self.find_reducts(relations, relative_to=None, mode=mode)
-            )
+            reducts = self.find_reducts(relations, relative_to=None, mode=mode)
+            if not reducts:
+                # the CORE is the intersection of ALL reducts - with zero
+                # reducts, that intersection is undefined (unlike an empty
+                # union, which is unambiguously the empty set), so this must
+                # raise rather than silently guess at an answer
+                raise ValueError(
+                    "Cannot compute the CORE: no reducts were found for "
+                    f"'relations'={relations!r}, so their intersection is undefined."
+                )
+            return frozenset.intersection(*reducts)
         # calculate the relative CORE (i.e., Q-CORE, where "Q" is relative_to)
         results = set()
         for relation in relations:
@@ -454,8 +465,6 @@ class RoughOperations(RoughApproximation):
             The partial dependency of knowledge.
         """
         if category is not None:
-            # pylint: disable=fixme
-            # TODO: check this is reached by code coverage
             return len(self.lower_approximation(relations, category)) / len(category)
         return len(
             self.find_relative_positive_region(relations, other_relations)

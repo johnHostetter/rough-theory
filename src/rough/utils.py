@@ -18,7 +18,7 @@ def powerset(iterable: Iterable, min_items: int):
         The powerset of the given iterable.
     """
     # https://stackoverflow.com/questions/1482308/how-to-get-all-subsets-of-a-set-powerset
+    items = list(iterable)
     return chain.from_iterable(
-        combinations(list(iterable), r)
-        for r in range(min_items, len(list(iterable)) + 1)
+        combinations(items, r) for r in range(min_items, len(items) + 1)
     )
