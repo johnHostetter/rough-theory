@@ -237,6 +237,169 @@ class TestDefinable(unittest.TestCase):
             == "TotallyUndefinable"
         )
 
+    def test_family_of_categories_matches_individual_calls(self) -> None:
+        """
+        Coverage/regression test: approximation()'s list-of-categories branch
+        (used by lower_approximation()/upper_approximation() when passed a
+        list rather than a single frozenset) was previously untested -
+        confirm it returns the set of each individual category's own
+        approximation, not something else.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        set_y_2 = frozenset({"x1", "x7", "x8", "x10"})
+        set_z_2 = frozenset({"x2", "x3", "x4", "x8"})
+        categories = [set_x_2, set_y_2, set_z_2]
+
+        expected_lowers = {
+            self.knowledge_base.lower_approximation("R", category)
+            for category in categories
+        }
+        expected_uppers = {
+            self.knowledge_base.upper_approximation("R", category)
+            for category in categories
+        }
+        self.assertEqual(
+            self.knowledge_base.lower_approximation("R", categories), expected_lowers
+        )
+        self.assertEqual(
+            self.knowledge_base.upper_approximation("R", categories), expected_uppers
+        )
+
+    def test_quality_of_approximation_over_a_family_of_categories(self) -> None:
+        """
+        Coverage/regression test: quality_of_approximation()'s family-of-
+        categories branch was previously untested. Expected value derived
+        independently: sum of each category's own lower_approximation size
+        (4 + 2 + 2 = 8) over the universe size (11).
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        set_y_2 = frozenset({"x1", "x7", "x8", "x10"})
+        set_z_2 = frozenset({"x2", "x3", "x4", "x8"})
+
+        self.assertEqual(
+            self.knowledge_base.quality_of_approximation(
+                "R", [set_x_2, set_y_2, set_z_2]
+            ),
+            8 / 11,
+        )
+
+    def test_accuracy_over_a_family_of_categories(self) -> None:
+        """
+        Coverage/regression test: accuracy()'s family-of-categories branch
+        was previously untested. Expected value derived independently: sum
+        of each category's own lower_approximation size (4 + 2 + 2 = 8) over
+        the sum of each category's own upper_approximation size
+        (8 + 6 + 7 = 21) - each individual accuracy already established in
+        test_roughly_definable (1/2, 1/3, 2/7) is a per-category ratio, not
+        the same thing as this pooled family ratio.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        set_y_2 = frozenset({"x1", "x7", "x8", "x10"})
+        set_z_2 = frozenset({"x2", "x3", "x4", "x8"})
+
+        self.assertEqual(
+            self.knowledge_base.accuracy("R", [set_x_2, set_y_2, set_z_2]),
+            8 / 21,
+        )
+
+    def test_raises_for_an_unsupported_categories_type(self) -> None:
+        """
+        Coverage/regression test: approximation()'s final else-branch raise,
+        for a `categories` argument that has a length but is neither a set,
+        frozenset, nor list (e.g. a tuple) - previously untested.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        with self.assertRaisesRegex(
+            ValueError, "must be a set, a frozenset, or a list"
+        ):
+            self.knowledge_base.lower_approximation("R", (set_x_2,))
+
+    def test_raises_when_a_category_in_the_list_is_empty(self) -> None:
+        """
+        Coverage/regression test: approximation()'s list-of-categories branch
+        must reject an empty element within the list, not just an empty
+        `categories` argument overall - previously untested.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        with self.assertRaisesRegex(
+            ValueError, "may not have an element with a length of zero"
+        ):
+            self.knowledge_base.lower_approximation("R", [set_x_2, frozenset()])
+
+    def test_quality_of_approximation_raises_for_an_empty_categories_argument(
+        self,
+    ) -> None:
+        """
+        Coverage/regression test: quality_of_approximation()'s own
+        len(categories) == 0 guard - previously untested (the sibling guards
+        on lower/upper_approximation/boundary_region/accuracy/definable were
+        already covered, this one wasn't).
+
+        Returns:
+            None
+        """
+        with self.assertRaisesRegex(ValueError, "may not have a length of zero"):
+            self.knowledge_base.quality_of_approximation("R", frozenset())
+
+    def test_quality_of_approximation_single_category(self) -> None:
+        """
+        Coverage/regression test: quality_of_approximation()'s non-list
+        (single-category) branch was previously untested - every existing
+        test either used a family (list) or didn't call this method at all.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        self.assertEqual(
+            self.knowledge_base.quality_of_approximation("R", set_x_2),
+            len(self.knowledge_base.lower_approximation("R", set_x_2)) / 11,
+        )
+
+    def test_quality_of_approximation_raises_when_a_category_is_empty(self) -> None:
+        """
+        Coverage/regression test: quality_of_approximation()'s family-of-
+        categories branch must reject an empty element - previously
+        untested.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        with self.assertRaisesRegex(
+            ValueError, "may not have an element with a length of zero"
+        ):
+            self.knowledge_base.quality_of_approximation("R", [set_x_2, frozenset()])
+
+    def test_accuracy_raises_when_a_category_is_empty(self) -> None:
+        """
+        Coverage/regression test: accuracy()'s family-of-categories branch
+        must reject an empty element - previously untested.
+
+        Returns:
+            None
+        """
+        set_x_2 = frozenset({"x0", "x3", "x4", "x5", "x8", "x10"})
+        with self.assertRaisesRegex(
+            ValueError, "may not have an element with a length of zero"
+        ):
+            self.knowledge_base.accuracy("R", [set_x_2, frozenset()])
+
     def test_invalid_argument_for_lower_approximation(self) -> None:
         """
         Test the argument 'categories' may not have a length of zero.

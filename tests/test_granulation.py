@@ -313,6 +313,57 @@ class TestSetGranulesTagsAreIndependentPerVertex(unittest.TestCase):
         first_tags.add("mutated")
         self.assertNotIn("mutated", second_tags)
 
+    def test_accepts_an_explicit_list_of_per_item_tag_sets(self) -> None:
+        """
+        Coverage/regression test: set_granules()'s third tags branch (an
+        already-a-list-of-sets, one per item, rather than a single string/set
+        applied to every item) was previously untested.
+        """
+        granulation = RoughGranulation()
+        granulation.set_granules(["x1", "x2"], tags=[{"a"}, {"b"}])
+
+        self.assertEqual(granulation.graph.vs[0]["tags"], {"a"})
+        self.assertEqual(granulation.graph.vs[1]["tags"], {"b"})
+
+
+class TestAddParentRelationEdgeCases(unittest.TestCase):
+    """
+    Coverage/regression tests for two add_parent_relation()/
+    create_compound_edges() branches not exercised elsewhere:
+    attr_type being passed as a digit-string (converted to int, for
+    save/load round-tripping), and a single already-registered item (not a
+    collection of items) as one of args' elements.
+    """
+
+    def test_digit_string_attr_type_is_converted_to_int(self) -> None:
+        granulation = RoughGranulation()
+        granulation.set_granules([1, 2, 3], tags="element")
+
+        vertices = granulation.add_parent_relation("5", ({1, 2},))
+
+        self.assertEqual(vertices[0]["item"], 5)
+        self.assertIsInstance(vertices[0]["item"], int)
+
+    def test_a_single_non_iterable_item_is_treated_as_one_source_vertex(self) -> None:
+        """
+        create_compound_edges()'s `for node_id in compound` raises TypeError
+        when `compound` is a single non-iterable item (e.g. an int, as
+        opposed to a set/frozenset of items) rather than a collection - it
+        must fall back to treating `compound` itself as the one source
+        vertex, not propagate the error.
+        """
+        granulation = RoughGranulation()
+        granulation.set_granules([1, 2, 3], tags="element")
+
+        vertices = granulation.add_parent_relation("R", (1,))
+
+        edges = [
+            (granulation.graph.vs[s]["item"], granulation.graph.vs[t]["item"])
+            for s, t in granulation.graph.get_edgelist()
+        ]
+        self.assertEqual(edges, [(1, "R")])
+        self.assertEqual(vertices[0]["item"], "R")
+
 
 class TestExportVisualValidation(unittest.TestCase):
     """
