@@ -6,6 +6,7 @@ whether rules are consistent, etc.
 import unittest
 
 from rough.decisions import RoughDecisions
+from rough.granulation import RoughGranulation
 from tests.test_knowledge_representation_system import make_example
 
 
@@ -202,3 +203,34 @@ class TestDecomposeDecisionTableWithNoBoundaryRegions(unittest.TestCase):
         consistent, inconsistent = knowledge_base.decompose_decision_table({"a"}, {"d"})
         self.assertEqual(inconsistent, frozenset())
         self.assertEqual(consistent, frozenset({"x1", "x2", "x3", "x4"}))
+
+
+class TestWrappingAnExternallyBuiltGraph(unittest.TestCase):
+    """
+    RoughDecisions(graph=..., attribute_table=...) can wrap a graph built by a plain
+    RoughGranulation - e.g. a KnowledgeBase or Regime instance's own .graph/
+    .attribute_table - and immediately run real rough-set analysis against it,
+    without that graph-owning object needing to inherit RoughDecisions itself. See
+    RoughGranulation's own class docstring (granulation.py) for the intended pattern.
+    """
+
+    def test_find_reducts_matches_building_the_same_example_directly(self) -> None:
+        # build the graph via a plain RoughGranulation, mirroring how a
+        # KnowledgeBase/Regime instance owns its own graph/attribute_table today.
+        universe = list(range(1, 9))
+        granulation = RoughGranulation()
+        granulation.set_granules(universe, tags="element")
+        granulation.add_parent_relation("a", ({2, 8}, {1, 4, 5}, {3, 6, 7}))
+        granulation.add_parent_relation("b", ({1, 3, 5}, {2, 4, 7, 8}, {6}))
+        granulation.add_parent_relation("c", ({3, 4, 6}, {2, 7, 8}, {1, 5}))
+
+        # wrap it fresh to run analysis - aliases the same graph/table, doesn't copy.
+        analysis = RoughDecisions(
+            graph=granulation.graph, attribute_table=granulation.attribute_table
+        )
+
+        # golden value from test_knowledge_representation_system.py's identical
+        # universe/relations, built directly via RoughDecisions() there instead.
+        self.assertEqual(
+            analysis.find_reducts({"a", "b", "c"}), frozenset({frozenset({"a", "b"})})
+        )

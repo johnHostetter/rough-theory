@@ -6,7 +6,7 @@ classes, such as RoughApproximation, to provide the basic granulation operations
 
 from collections import Counter
 from collections.abc import Iterable
-from typing import Any, Dict, List, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 import graphviz
 import igraph as ig
@@ -17,13 +17,27 @@ class RoughGranulation:
     A class that represents the necessary granulation operations required for rough set theory. This
     class is inherited by more specialized classes, such as RoughApproximation, to provide the basic
     granulation operations.
+
+    RoughApproximation/RoughOperations/RoughDecisions all subclass this without overriding
+    __init__, so passing graph/attribute_table works identically all the way up that chain -
+    e.g. RoughDecisions(graph=knowledge_base.graph, attribute_table=knowledge_base.attribute_table)
+    wraps an EXISTING graph-bearing object (a KnowledgeBase, a Regime, or any other
+    RoughGranulation-shaped graph) in a fresh analysis instance, aliasing its graph/table rather
+    than copying them. This is the intended way to attach rough-set analysis (reducts, decision
+    tables, approximations) to a graph you don't otherwise inherit this hierarchy for: construct
+    the wrapper fresh whenever you actually want to analyze, rather than keeping one long-lived
+    analysis object that could drift out of sync with a graph that keeps changing underneath it.
     """
 
-    def __init__(self):
-        self.graph = ig.Graph(directed=True)
+    def __init__(
+        self,
+        graph: Optional[ig.Graph] = None,
+        attribute_table: Optional[dict] = None,
+    ):
+        self.graph = graph if graph is not None else ig.Graph(directed=True)
         # keys: hashed frozenset or attribute name (if given) mapped to
         # attribute values
-        self.attribute_table = {}
+        self.attribute_table = attribute_table if attribute_table is not None else {}
         # maps a vertex's "item" attribute value to the indices of every vertex
         # with that value - igraph has no index for arbitrary-Python-object
         # vertex attributes, so `self.graph.vs.find(item_eq=x)`/`.select(item_eq=x)`
@@ -34,6 +48,12 @@ class RoughGranulation:
         # self.graph). Kept as a private implementation detail: _find_by_item()/
         # _select_by_item() below are the only intended way to read it.
         self._item_index: Dict[Any, List[int]] = {}
+        if graph is not None:
+            # a caller-supplied graph may already have vertices this instance
+            # didn't create (e.g. wrapping an existing KnowledgeBase/Regime) -
+            # populate the index from what's actually there now, rather than
+            # starting empty and immediately disagreeing with reality.
+            self._rebuild_item_index()
 
     def _register_item(self, item: Any, vertex_index: int) -> None:
         """

@@ -394,5 +394,59 @@ class TestExportVisualValidation(unittest.TestCase):
             )
 
 
+class TestConstructorWrapsExistingGraph(unittest.TestCase):
+    """
+    RoughGranulation.__init__ can wrap an existing graph/attribute_table instead of
+    building fresh ones - the intended way to attach rough-set analysis (via
+    RoughApproximation/RoughOperations/RoughDecisions, none of which override
+    __init__) to a graph you don't otherwise inherit this hierarchy for, e.g.
+    RoughDecisions(graph=knowledge_base.graph, attribute_table=knowledge_base.
+    attribute_table). See granulation.py's own class docstring.
+    """
+
+    def test_no_args_still_builds_a_fresh_empty_graph_and_table(self) -> None:
+        """Default (no-args) construction is unchanged - existing callers (every
+        rough-theory test, KnowledgeBase, Regime) all construct this way."""
+        granulation = RoughGranulation()
+        self.assertEqual(granulation.graph.vcount(), 0)
+        self.assertEqual(granulation.attribute_table, {})
+
+    def test_wrapping_an_existing_graph_aliases_it_not_copies_it(self) -> None:
+        original = RoughGranulation()
+        original.graph.add_vertices(1, attributes={"item": ["x1"]})
+
+        wrapper = RoughGranulation(graph=original.graph)
+
+        self.assertIs(wrapper.graph, original.graph)
+        original.graph.add_vertices(1, attributes={"item": ["x2"]})
+        self.assertEqual(wrapper.graph.vcount(), 2)  # visible through the wrapper too
+
+    def test_wrapping_an_existing_attribute_table_aliases_it_not_copies_it(
+        self,
+    ) -> None:
+        original = RoughGranulation()
+        original.attribute_table["key"] = "value"
+
+        wrapper = RoughGranulation(attribute_table=original.attribute_table)
+
+        self.assertIs(wrapper.attribute_table, original.attribute_table)
+        original.attribute_table["other_key"] = "other_value"
+        self.assertIn("other_key", wrapper.attribute_table)
+
+    def test_item_index_is_rebuilt_from_a_graph_with_pre_existing_vertices(
+        self,
+    ) -> None:
+        """A wrapped graph's vertices existed before this instance started
+        tracking them - _find_by_item() must still resolve them correctly,
+        proving the index was populated at construction time, not left empty."""
+        original = RoughGranulation()
+        original.graph.add_vertices(2, attributes={"item": ["x1", "x2"]})
+
+        wrapper = RoughGranulation(graph=original.graph)
+
+        found = wrapper._find_by_item("x2")  # pylint: disable=protected-access
+        self.assertEqual(found.index, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
