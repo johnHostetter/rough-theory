@@ -4,6 +4,12 @@ approximation of a set of objects. The rough approximation is a set of objects t
 indiscernible from each other with respect to a set of relations. The rough approximation is a
 generalization of the lower and upper approximation, which are defined by Pawlak on page 10 of his
 book "Rough Sets: Theoretical Aspects of Reasoning About Data".
+
+Second rung of the RoughGranulation -> RoughApproximation -> RoughOperations ->
+RoughDecisions chain - see granulation.py's module docstring for the full architecture
+history and why this level (like the two above it) is typically reached by wrapping an
+existing graph on demand (`RoughApproximation(graph=obj.graph, attribute_table=
+obj.attribute_table)`) rather than by a caller inheriting it directly.
 """
 
 from collections import namedtuple

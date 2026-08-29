@@ -2,6 +2,76 @@
 A module that contains the RoughGranulation class, which is used to provide the necessary
 granulation operations required for rough set theory. This class is inherited by more specialized
 classes, such as RoughApproximation, to provide the basic granulation operations.
+
+Architecture and design history (2026-08-29)
+=============================================
+This package is organized as a 4-level inheritance chain, each level adding a set of
+functions that build toward the next higher-level operation:
+
+    RoughGranulation      - owns the igraph.Graph + attribute_table + O(1) item index.
+                            Generic vertex/edge/tag plumbing: set_granules(), select_by_tags(),
+                            add_parent_relation(), export_visual(), equivalence classes (/).
+      -> RoughApproximation  - Pawlak lower/upper approximation, positive/negative/boundary
+                                regions, accuracy/roughness - built on RoughGranulation's
+                                tags/equivalence-class machinery.
+        -> RoughOperations     - reducts, core, (in)dependence/dispensability - built on
+                                  RoughApproximation's indiscernibility()/approximation methods.
+          -> RoughDecisions       - discernibility matrices, decision-table decompose/simplify -
+                                    built on RoughOperations' reduct/core-finding.
+
+An audit of every consumer of this chain across the wider codebase (KnowledgeBase in the
+separate fuzzy-theory package, Regime in the separate regime package, fuzzy_ml's fyd/
+summary.py/temporal.py, experiments/pipeline.py) found a decisive fact: NOBODY outside
+this package's own test suite ever calls a RoughApproximation/RoughOperations/
+RoughDecisions method. Every real consumer only ever touches RoughGranulation-level
+surface (.graph, .attribute_table, .select_by_tags(), .set_granules(), __getitem__).
+Both KnowledgeBase and Regime independently inherited the FULL chain (`class
+KnowledgeBase(RoughDecisions, FuzzySystem)`, `class Regime(RoughDecisions)`) just to get
+that graph/tagging plumbing, dragging in ~40 reduct/decision-table/approximation methods
+neither ever calls - a real cost to anyone reading or using those classes, and (per the
+user directly) a contributing reason the analysis capabilities go unused: it's awkward to
+reach for something bolted onto a class that also does a hundred other things.
+
+The deeper reason the analysis layers go unused, though, isn't really the API shape - it's
+that there's rarely a graph worth analyzing that's actually kept current. A KnowledgeBase's
+graph is mutated in place over its lifetime; a CO-FIS-style neuro-fuzzy network (see
+PySoft's own PLANNED_FEATURES.md item #2) doesn't build a graph like this AT ALL today.
+Fixing the inheritance shape doesn't fix that by itself - but it's a necessary enabler:
+once ANY RoughGranulation-shaped graph exists (a KnowledgeBase's, a Regime's, or a future
+CO-FIS one), the fix below makes it trivial to attach analysis to it on demand, exactly
+when the graph is actually current, without that graph's owning class needing to inherit
+this hierarchy at all.
+
+Two designs were considered:
+  1. Full composition rewrite (every level holds a reference to the one below instead of
+     inheriting it, all the way down) - REJECTED for now. Nothing outside this package's
+     own tests calls RoughApproximation/RoughOperations/RoughDecisions methods
+     individually, so there's no live usage feedback to design a good composed API
+     against - reorganizing well-tested, 100%-covered code with no real consumer input
+     would be guessing at a shape nobody has asked for yet.
+  2. Make RoughGranulation.__init__ optionally wrap an EXISTING graph/attribute_table
+     (alias, not copy) instead of always building fresh ones - CHOSEN. Since none of
+     RoughApproximation/RoughOperations/RoughDecisions override __init__, this
+     propagates to all three for free, with zero changes needed in
+     approximation.py/operations.py/decisions.py. KnowledgeBase and Regime were then
+     changed to inherit ONLY RoughGranulation (what they actually use) instead of the
+     full chain - see their own module's docstrings for that half of the change.
+
+The resulting pattern for attaching analysis to any RoughGranulation-shaped graph:
+
+    analysis = RoughDecisions(graph=obj.graph, attribute_table=obj.attribute_table)
+    reducts = analysis.find_reducts(...)
+
+This constructs a FRESH, cheap wrapper aliasing the same graph object - not a snapshot,
+not a long-lived object to keep in sync. Reconstruct it every time you actually want to
+analyze, right before you need it. This deliberately mirrors the "rebuild fresh rather
+than incrementally patch a stale structure" convention this same session adopted for the
+still-not-yet-built CO-FIS igraph work (see PySoft's PLANNED_FEATURES.md item #2/#3) -
+same philosophy, so a future CO-FIS graph can plug into this exact pattern too.
+
+See also: fuzzy-theory's fuzzy/logic/knowledge_base.py (KnowledgeBase's own docstring
+explains why it dropped RoughDecisions in favor of RoughGranulation) and regime's
+regime/flow/impl.py (Regime's class comment, same change).
 """
 
 from collections import Counter

@@ -1,5 +1,24 @@
 """
 Implements the methods required to work with rough theory.
+
+Top rung of the RoughGranulation -> RoughApproximation -> RoughOperations ->
+RoughDecisions chain (discernibility matrices, decision-table decompose/simplify, built
+on RoughOperations' reduct/core-finding) - see granulation.py's module docstring for the
+full architecture history, including why nothing outside this package's own tests
+inherits this class directly anymore (KnowledgeBase/fuzzy-theory and Regime/regime both
+used to; both now inherit only RoughGranulation and attach this on demand instead).
+
+This is the class you actually want to construct to run rough-set analysis on some
+other object's graph:
+
+    analysis = RoughDecisions(graph=obj.graph, attribute_table=obj.attribute_table)
+    reducts = analysis.find_reducts(...)
+    consistent, inconsistent = analysis.decompose_decision_table(condition_attrs, decision_attrs)
+
+`obj` can be a KnowledgeBase, a Regime, or any other object exposing a
+RoughGranulation-shaped `.graph`/`.attribute_table` pair - this aliases them rather than
+copying, so construct it fresh right before you need current analysis rather than
+holding onto one long-lived instance.
 """
 
 import itertools

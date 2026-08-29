@@ -1,5 +1,11 @@
 """
 Implements the methods required to work with rough theory.
+
+Third rung of the RoughGranulation -> RoughApproximation -> RoughOperations ->
+RoughDecisions chain (reducts, core, (in)dependence/dispensability, built on
+RoughApproximation's indiscernibility()/approximation methods) - see granulation.py's
+module docstring for the full architecture history. Like its neighbors, typically
+reached by wrapping an existing graph on demand rather than direct inheritance.
 """
 
 from typing import List, Tuple, Union
